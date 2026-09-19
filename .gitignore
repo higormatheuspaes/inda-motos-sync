@@ -1,0 +1,22 @@
+# Segredos - NUNCA versionar
+.env
+
+# Dados locais/gerados em runtime - cada máquina tem o seu
+data/estado.json
+data/status.json
+logs/*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+venv38/
+.venv/
+
+# Build do PyInstaller
+build/
+dist/
+*.spec
+
+# Editor
+.vscode/
