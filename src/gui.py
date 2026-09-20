@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 import threading
+import logging
 import status_manager
 import sync_engine
 
@@ -265,8 +266,22 @@ class App(tk.Tk):
         thread.start()
 
     def _rodar_em_thread(self):
-        sync_engine.executar_sincronizacao(on_progress=self._progresso_thread_segura)
+        try:
+            sync_engine.executar_sincronizacao(on_progress=self._progresso_thread_segura)
+        except Exception as e:
+            logging.exception("Falha na sincronização")
+            mensagem = str(e)
+            self.after(0, lambda: self._falhou(mensagem))
+            return
         self.after(0, self._finalizou)
+
+    def _falhou(self, mensagem):
+        self.botao_rerun.config(state="normal", text="Sincronizar agora")
+        self.progresso.stop()
+        self.progresso.pack_forget()
+        resumo = " ".join(mensagem.split())[:160]
+        self.label_status_titulo.config(text="⚠ Falha ao sincronizar", fg=COR_ERRO)
+        self.label_status_detalhe.config(text=f"{resumo}  (detalhes em logs/sync.log)")
 
     def _progresso_thread_segura(self, atual, total):
         self.after(0, lambda: self._atualizar_progresso(atual, total))
