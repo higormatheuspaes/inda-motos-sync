@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(encoding="utf-8-sig")
 
 # Firebird
 FB_HOST = os.getenv("FB_HOST")
