@@ -9,6 +9,8 @@ FB_PORT = int(os.getenv("FB_PORT", 3050))
 FB_DATABASE = os.getenv("FB_DATABASE")
 FB_USER = os.getenv("FB_USER")
 FB_PASSWORD = os.getenv("FB_PASSWORD")
+FB_CHARSET = os.getenv("FB_CHARSET") or "UTF8"
+FB_CLIENT_LIBRARY = os.getenv("FB_CLIENT_LIBRARY") or None
 
 # Magazord API
 MAGAZORD_BASE_URL = os.getenv("MAGAZORD_BASE_URL")

@@ -1,3 +1,3 @@
-firebird-driver
+fdb
 requests
 python-dotenv

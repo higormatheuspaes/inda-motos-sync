@@ -1,15 +1,16 @@
-import firebird.driver as fb
+import fdb
 import config
 
 
 def buscar_produtos_para_sincronizar():
     dsn = f"{config.FB_HOST}/{config.FB_PORT}:{config.FB_DATABASE}"
 
-    conn = fb.connect(
-        database=dsn,
+    conn = fdb.connect(
+        dsn=dsn,
         user=config.FB_USER,
         password=config.FB_PASSWORD,
-        charset="UTF8",
+        charset=config.FB_CHARSET,
+        fb_library_name=config.FB_CLIENT_LIBRARY,
     )
     cur = conn.cursor()
 
