@@ -1,28 +1,18 @@
-import firebird.driver as firebird
+import firebird.driver as fb
 import config
 
-def buscar_produtos_para_sincronizar()
-    """
-    Retorna lista de dicts: {sku, nome, estoque, preco}
 
-    Query confirmada em cima do schema real do Sisfatura:
-      - PRODUTO.FG_SITE = 1         -> produto marcado para ir ao site
-      - ESTOQUE (filial matriz)     -> quantidade disponível
-      - SUB_TAB_PRECO (CD_TABELA=1) -> preço da tabela "1-PADRAO"
-    """
+def buscar_produtos_para_sincronizar():
+    dsn = f"{config.FB_HOST}/{config.FB_PORT}:{config.FB_DATABASE}"
 
     conn = fb.connect(
-        database=config.FB_DATABASE,
+        database=dsn,
         user=config.FB_USER,
         password=config.FB_PASSWORD,
-        host=config.FB_HOST,
-        port=config.FB_PORT
+        charset="UTF8",
     )
-
     cur = conn.cursor()
 
-    # TODO: confirmar código exato da filial matriz (assumido = 1)
-    # TODO: confirmar se "disponível" = QT_PROD - QT_PROD_RESERVADA
     query = """
         SELECT
             p.CD_REF,
@@ -37,9 +27,9 @@ def buscar_produtos_para_sincronizar()
     cur.execute(query)
 
     produtos = []
-    for row in cur.fetchAll():
+    for row in cur.fetchall():
         produtos.append({
-        "sku": str(row[0]),
+            "sku": str(row[0]),
             "nome": row[1],
             "estoque": row[2] or 0,
             "preco": float(row[3]) if row[3] is not None else 0.0,

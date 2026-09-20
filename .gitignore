@@ -17,6 +17,7 @@ venv38/
 build/
 dist/
 *.spec
+!sync_inda_motos.spec
 
 # Editor
 .vscode/

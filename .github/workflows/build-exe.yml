@@ -1,0 +1,47 @@
+name: Build EXE
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Gerar executável
+        run: pyinstaller sync_inda_motos.spec
+
+      - name: Montar pacote de distribuição
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path pacote
+          Copy-Item dist/sync_inda_motos.exe pacote/
+          Copy-Item -Recurse assets pacote/assets
+          Compress-Archive -Path pacote/* -DestinationPath sync_inda_motos.zip
+
+      - name: Publicar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: "Última versão (${{ github.sha }})"
+          body: |
+            Build automático gerado a partir do commit ${{ github.sha }}.
+
+            ${{ github.event.head_commit.message }}
+          files: sync_inda_motos.zip
