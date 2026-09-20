@@ -33,6 +33,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path pacote
           Copy-Item dist/sync_inda_motos.exe pacote/
           Copy-Item -Recurse assets pacote/assets
+          Copy-Item .env.example pacote/.env.example
           Compress-Archive -Path pacote/* -DestinationPath sync_inda_motos.zip
 
       - name: Publicar release
