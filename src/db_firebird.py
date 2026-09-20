@@ -1,11 +1,23 @@
 import logging
+import os
 
 import fdb
 import config
 
 
+def _incluir_pasta_do_cliente_no_path():
+    # o fbclient.dll do Firebird 3+/4 depende de DLLs da própria pasta dele
+    if not config.FB_CLIENT_LIBRARY:
+        return
+    pasta = os.path.dirname(config.FB_CLIENT_LIBRARY)
+    caminhos = os.environ.get("PATH", "").split(os.pathsep)
+    if pasta and pasta not in caminhos:
+        os.environ["PATH"] = pasta + os.pathsep + os.environ.get("PATH", "")
+
+
 def buscar_produtos_para_sincronizar():
     dsn = f"{config.FB_HOST}/{config.FB_PORT}:{config.FB_DATABASE}"
+    _incluir_pasta_do_cliente_no_path()
 
     try:
         conn = fdb.connect(
