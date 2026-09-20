@@ -1,3 +1,5 @@
+import logging
+
 import fdb
 import config
 
@@ -5,13 +7,21 @@ import config
 def buscar_produtos_para_sincronizar():
     dsn = f"{config.FB_HOST}/{config.FB_PORT}:{config.FB_DATABASE}"
 
-    conn = fdb.connect(
-        dsn=dsn,
-        user=config.FB_USER,
-        password=config.FB_PASSWORD,
-        charset=config.FB_CHARSET,
-        fb_library_name=config.FB_CLIENT_LIBRARY,
-    )
+    try:
+        conn = fdb.connect(
+            dsn=dsn,
+            user=config.FB_USER,
+            password=config.FB_PASSWORD,
+            charset=config.FB_CHARSET,
+            fb_library_name=config.FB_CLIENT_LIBRARY,
+        )
+    except fdb.DatabaseError:
+        cliente = fdb.load_api(config.FB_CLIENT_LIBRARY).client_library_name
+        logging.error(
+            "Falha ao conectar em %s (usuário %s, charset %s) usando o cliente Firebird %s",
+            dsn, config.FB_USER, config.FB_CHARSET, cliente,
+        )
+        raise
     cur = conn.cursor()
 
     query = """
