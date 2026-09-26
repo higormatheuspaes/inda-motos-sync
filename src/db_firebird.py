@@ -54,7 +54,7 @@ def buscar_produtos_para_sincronizar():
         produtos.append({
             "sku": str(row[0]),
             "nome": row[1],
-            "estoque": row[2] or 0,
+            "estoque": int(row[2]) if row[2] is not None else 0,
             "preco": float(row[3]) if row[3] is not None else 0.0,
         })
 
