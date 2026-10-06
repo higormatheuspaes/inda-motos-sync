@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
 import logging
 import status_manager
@@ -147,13 +147,21 @@ class App(tk.Tk):
 
         aba_produtos = tk.Frame(self.notebook, bg=COR_CARD)
         aba_erros = tk.Frame(self.notebook, bg=COR_CARD)
+        aba_alertas = tk.Frame(self.notebook, bg=COR_CARD)
 
         self.notebook.add(aba_produtos, text="Produtos sincronizados")
         self.notebook.add(aba_erros, text="Erros")
+        self.notebook.add(aba_alertas, text="Alertas")
+
+        tk.Label(
+            aba_produtos,
+            text="As alterações podem levar até 1 hora para aparecer no site.",
+            font=("Segoe UI", 9), bg=COR_CARD, fg=COR_TEXTO_SECUNDARIO,
+        ).pack(anchor="w", padx=16, pady=(12, 0))
 
         # --- Filtro de produtos ---
         filtro_frame = tk.Frame(aba_produtos, bg=COR_CARD)
-        filtro_frame.pack(fill="x", padx=16, pady=(16, 0))
+        filtro_frame.pack(fill="x", padx=16, pady=(8, 0))
 
         tk.Label(
             filtro_frame, text="Buscar (SKU ou produto):",
@@ -204,10 +212,50 @@ class App(tk.Tk):
         self.tabela_erros.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=16)
         scroll_erros.pack(side="right", fill="y", padx=(0, 16), pady=16)
 
+        tk.Label(
+            aba_alertas,
+            text="Itens com variação grande. Não foram enviados à Magazord: confira e sincronize um a um.",
+            font=("Segoe UI", 9), bg=COR_CARD, fg=COR_TEXTO_SECUNDARIO,
+        ).pack(anchor="w", padx=16, pady=(12, 0))
+
+        colunas_alerta = ("sku", "nome_banco", "nome_magazord", "estoque", "preco", "motivo")
+        self.tabela_alertas = ttk.Treeview(aba_alertas, columns=colunas_alerta, show="headings", selectmode="browse")
+        self.tabela_alertas.heading("sku", text="SKU")
+        self.tabela_alertas.heading("nome_banco", text="Produto (banco)")
+        self.tabela_alertas.heading("nome_magazord", text="Produto (Magazord)")
+        self.tabela_alertas.heading("estoque", text="Estoque (Magazord → banco)")
+        self.tabela_alertas.heading("preco", text="Preço (Magazord → banco)")
+        self.tabela_alertas.heading("motivo", text="Motivo")
+        self.tabela_alertas.column("sku", width=60, anchor="center")
+        self.tabela_alertas.column("nome_banco", width=220)
+        self.tabela_alertas.column("nome_magazord", width=220)
+        self.tabela_alertas.column("estoque", width=150, anchor="center")
+        self.tabela_alertas.column("preco", width=150, anchor="center")
+        self.tabela_alertas.column("motivo", width=200)
+
+        scroll_alertas = ttk.Scrollbar(aba_alertas, orient="vertical", command=self.tabela_alertas.yview)
+        self.tabela_alertas.configure(yscrollcommand=scroll_alertas.set)
+
+        self.tabela_alertas.pack(side="top", fill="both", expand=True, padx=(16, 0), pady=(8, 0))
+        scroll_alertas.pack(side="right", fill="y", padx=(0, 16), pady=(8, 0))
+
+        self.botao_aprovar = ttk.Button(
+            aba_alertas, text="Sincronizar selecionado",
+            style="Primaria.TButton", command=self.aprovar_alerta_selecionado,
+        )
+        self.botao_aprovar.pack(anchor="e", padx=16, pady=12)
+        self.tabela_alertas.bind("<<TreeviewSelect>>", lambda _: self._atualizar_botao_aprovar())
+        self._alertas_por_sku = {}
+        self._atualizar_botao_aprovar()
+
     # ------------------------------------------------------------------
     def _atualizar_titulo_aba_erros(self, total_erros):
         texto = f"Erros ({total_erros})" if total_erros else "Erros"
         self.notebook.tab(1, text=texto)
+
+    def _atualizar_titulo_aba_alertas(self, total_alertas):
+        texto = f"Alertas ({total_alertas})" if total_alertas else "Alertas"
+        self.notebook.tab(2, text=texto)
 
     def carregar_tela(self):
         status = status_manager.carregar_status()
@@ -242,6 +290,63 @@ class App(tk.Tk):
 
         self._atualizar_titulo_aba_erros(status["total_erros"])
 
+        for item in self.tabela_alertas.get_children():
+            self.tabela_alertas.delete(item)
+        self._alertas_por_sku = {}
+        for a in status.get("alertas", []):
+            self._alertas_por_sku[a["sku"]] = a
+            self.tabela_alertas.insert(
+                "", "end", iid=a["sku"],
+                values=(
+                    a["sku"],
+                    a["nome_banco"],
+                    a["nome_magazord"],
+                    f"{a.get('estoque_antigo', '-')}  →  {a.get('estoque_novo', '-')}",
+                    f"{a.get('preco_antigo', '-')}  →  {a.get('preco_novo', '-')}",
+                    ", ".join(a["motivos"]),
+                ),
+            )
+
+        self._atualizar_titulo_aba_alertas(len(status.get("alertas", [])))
+        self._atualizar_botao_aprovar()
+
+    def _atualizar_botao_aprovar(self):
+        selecionado = self.tabela_alertas.selection()
+        estado = "normal" if selecionado and str(self.botao_rerun["state"]) != "disabled" else "disabled"
+        self.botao_aprovar.config(state=estado)
+
+    def aprovar_alerta_selecionado(self):
+        selecionado = self.tabela_alertas.selection()
+        if not selecionado:
+            return
+        item = self._alertas_por_sku[selecionado[0]]
+        confirmado = messagebox.askyesno(
+            "Confirmar sincronização",
+            f"SKU {item['sku']} — {item['nome_banco']}\n\n"
+            f"Estoque: {item.get('estoque_antigo', '-')} → {item['estoque_novo']}\n"
+            f"Preço: {item.get('preco_antigo', '-')} → {item['preco_novo']}\n\n"
+            f"Motivo: {', '.join(item['motivos'])}\n\n"
+            "Enviar esta alteração para a Magazord?",
+            parent=self,
+        )
+        if not confirmado:
+            return
+        self.botao_aprovar.config(state="disabled")
+        threading.Thread(target=self._aprovar_em_thread, args=(item,), daemon=True).start()
+
+    def _aprovar_em_thread(self, item):
+        try:
+            ok, mensagem = sync_engine.sincronizar_alerta(item)
+        except Exception as e:
+            logging.exception("Falha ao sincronizar item aprovado")
+            ok, mensagem = False, str(e)
+        self.after(0, lambda: self._finalizou_aprovacao(item["sku"], ok, mensagem))
+
+    def _finalizou_aprovacao(self, sku, ok, mensagem):
+        if not ok:
+            messagebox.showerror("Falha ao sincronizar", f"SKU {sku}: {mensagem}", parent=self)
+        self.carregar_tela()
+
     # ------------------------------------------------------------------
     def _filtrar_produtos(self):
         termo = self.var_filtro.get().strip().lower()
@@ -259,6 +364,7 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
     def rodar_sincronizacao(self):
         self.botao_rerun.config(state="disabled", text="Sincronizando...")
+        self._atualizar_botao_aprovar()
         self.progresso.pack(anchor="e", fill="x", pady=(8, 0))
         self.progresso.configure(mode="indeterminate")
         self.progresso.start(10)
@@ -282,6 +388,7 @@ class App(tk.Tk):
         resumo = " ".join(mensagem.split())[:160]
         self.label_status_titulo.config(text="⚠ Falha ao sincronizar", fg=COR_ERRO)
         self.label_status_detalhe.config(text=f"{resumo}  (detalhes em logs/sync.log)")
+        self._atualizar_botao_aprovar()
 
     def _progresso_thread_segura(self, atual, total):
         self.after(0, lambda: self._atualizar_progresso(atual, total))

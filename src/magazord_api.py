@@ -26,6 +26,37 @@ def _exigir(valor, nome):
     return valor
 
 
+def _get(caminho, params):
+    resp = requests.get(_url(caminho), params=params, headers=_headers(), timeout=60)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def listar_produtos_magazord():
+    tabela = _exigir(config.MAGAZORD_TABELA_PRECO, "MAGAZORD_TABELA_PRECO")
+    deposito = _exigir(config.MAGAZORD_DEPOSITO, "MAGAZORD_DEPOSITO")
+    precos = _get("/v1/listPreco", {"tabelaPreco": tabela, "limit": 5000})
+    estoques = _get("/v1/listEstoque", {"limit": 5000})
+    for resp in (precos, estoques):
+        if resp["total"] > len(resp["data"]):
+            raise RuntimeError("listagem da Magazord incompleta; sincronização cancelada")
+
+    catalogo = {}
+    for p in precos["data"]:
+        preco = p.get("precoVenda")
+        catalogo[p["produto"]] = {
+            "nome": p["produtoNome"],
+            "preco": float(preco) if preco is not None else None,
+            "estoque": None,
+        }
+    for e in estoques["data"]:
+        if e["deposito"] != deposito:
+            continue
+        item = catalogo.setdefault(e["produto"], {"nome": e["descricaoProduto"], "preco": None, "estoque": None})
+        item["estoque"] = int(e["quantidadeFisica"] or 0)
+    return catalogo
+
+
 def atualizar_estoque(sku, quantidade):
     """POST /v1/estoque: ajusta o estoque físico do produto para a quantidade informada."""
     payload = {
