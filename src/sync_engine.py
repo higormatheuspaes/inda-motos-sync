@@ -43,11 +43,13 @@ def executar_sincronizacao(on_progress=None):
             resp_estoque = magazord_api.atualizar_estoque(sku, produto["estoque"])
             resp_preco = magazord_api.atualizar_preco(sku, produto["preco"])
 
-            if resp_estoque.status_code >= 400 or resp_preco.status_code >= 400:
-                erros.append({
-                    **dados_tentativa,
-                    "mensagem": f"estoque={resp_estoque.status_code} preco={resp_preco.status_code}",
-                })
+            falhas = [
+                f"{nome} {resp.status_code}: {' '.join(resp.text.split())[:200]}"
+                for nome, resp in (("estoque", resp_estoque), ("preço", resp_preco))
+                if resp.status_code >= 400
+            ]
+            if falhas:
+                erros.append({**dados_tentativa, "mensagem": " | ".join(falhas)})
                 continue
 
             sincronizados.append(dados_tentativa)

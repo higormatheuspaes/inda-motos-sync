@@ -16,6 +16,8 @@ FB_CLIENT_LIBRARY = os.getenv("FB_CLIENT_LIBRARY") or None
 MAGAZORD_BASE_URL = os.getenv("MAGAZORD_BASE_URL")
 MAGAZORD_TOKEN = os.getenv("MAGAZORD_TOKEN")
 MAGAZORD_SENHA = os.getenv("MAGAZORD_SENHA")
+MAGAZORD_DEPOSITO = int(os.getenv("MAGAZORD_DEPOSITO") or 0) or None
+MAGAZORD_TABELA_PRECO = int(os.getenv("MAGAZORD_TABELA_PRECO") or 0) or None
 
 # E-mail (notificação de erros)
 SMTP_HOST = os.getenv("SMTP_HOST")
