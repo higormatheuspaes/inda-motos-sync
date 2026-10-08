@@ -16,10 +16,13 @@ def _motivos_do_item(ref, estoque_novo, preco_novo):
         variacao = (preco_novo - ref["preco"]) / ref["preco"]
         if abs(variacao) > LIMITE_VARIACAO_PRECO:
             motivos.append(f"preço mudou {variacao:+.0%}")
-    if ref.get("estoque"):
+    estoque_ref = ref.get("estoque")
+    if estoque_ref is None:
+        motivos.append("sem registro de estoque na Magazord; crie o registro no painel")
+    elif estoque_ref != 0:
         if estoque_novo == 0:
             motivos.append("estoque zerou")
-        elif abs(estoque_novo - ref["estoque"]) / ref["estoque"] > LIMITE_VARIACAO_ESTOQUE:
+        elif abs(estoque_novo - estoque_ref) / estoque_ref > LIMITE_VARIACAO_ESTOQUE:
             motivos.append("estoque mudou mais de 50%")
     return motivos
 
