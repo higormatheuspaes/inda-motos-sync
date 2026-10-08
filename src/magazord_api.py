@@ -1,4 +1,5 @@
 import base64
+import time
 import requests
 import config
 
@@ -57,6 +58,15 @@ def listar_produtos_magazord():
     return catalogo
 
 
+def _post(caminho, payload):
+    for espera in (0, 2, 5, 10):
+        time.sleep(espera)
+        resp = requests.post(_url(caminho), json=payload, headers=_headers(), timeout=15)
+        if resp.status_code != 429:
+            return resp
+    return resp
+
+
 def atualizar_estoque(sku, quantidade):
     """POST /v1/estoque: ajusta o estoque físico do produto para a quantidade informada."""
     payload = {
@@ -66,7 +76,7 @@ def atualizar_estoque(sku, quantidade):
         "tipo": TIPO_ESTOQUE_FISICO,
         "tipoOperacao": OPERACAO_AJUSTE,
     }
-    return requests.post(_url("/v1/estoque"), json=payload, headers=_headers(), timeout=15)
+    return _post("/v1/estoque", payload)
 
 
 def atualizar_preco(sku, preco):
@@ -76,4 +86,4 @@ def atualizar_preco(sku, preco):
         "tabelaPreco": _exigir(config.MAGAZORD_TABELA_PRECO, "MAGAZORD_TABELA_PRECO"),
         "precoVenda": float(preco),
     }]
-    return requests.post(_url("/v1/preco"), json=payload, headers=_headers(), timeout=15)
+    return _post("/v1/preco", payload)

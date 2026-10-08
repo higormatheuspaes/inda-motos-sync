@@ -19,8 +19,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Sincronização Inda Motos")
-        self.geometry("880x620")
-        self.resizable(False, False)
+        self.geometry("1100x700")
+        self.minsize(900, 560)
+        self.resizable(True, True)
         self.configure(bg=COR_FUNDO)
 
         # precisa vir antes de _montar_layout, que já usa self.logo_img
@@ -91,6 +92,92 @@ class App(tk.Tk):
             background=[("selected", COR_CARD)],
             foreground=[("selected", COR_TEXTO)],
         )
+
+    # ------------------------------------------------------------------
+    def _criar_tabela(self, parent, colunas, cabecalhos, larguras):
+        """Monta um Treeview com rolagem vertical e horizontal dentro de parent."""
+        frame = tk.Frame(parent, bg=COR_CARD)
+        frame.pack(fill="both", expand=True, padx=16, pady=16)
+        frame.grid_rowconfigure(0, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+
+        tabela = ttk.Treeview(frame, columns=colunas, show="headings")
+        for coluna, titulo in zip(colunas, cabecalhos):
+            tabela.heading(coluna, text=titulo)
+            tabela.column(coluna, width=larguras.get(coluna, 150), anchor=larguras.get(f"{coluna}_anchor", "w"))
+
+        scroll_v = ttk.Scrollbar(frame, orient="vertical", command=tabela.yview)
+        scroll_h = ttk.Scrollbar(frame, orient="horizontal", command=tabela.xview)
+        tabela.configure(yscrollcommand=scroll_v.set, xscrollcommand=scroll_h.set)
+
+        tabela.grid(row=0, column=0, sticky="nsew")
+        scroll_v.grid(row=0, column=1, sticky="ns")
+        scroll_h.grid(row=1, column=0, sticky="ew")
+        return tabela
+
+    def _criar_lista(self, parent, colunas):
+        """Lista de linhas com cabeçalho fixo, rolagem vertical e espaço pro botão de
+        cada linha. colunas: lista de (titulo, largura_em_caracteres)."""
+        container = tk.Frame(parent, bg=COR_CARD)
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        cabecalho = tk.Frame(container, bg="#e5e7eb")
+        cabecalho.pack(fill="x")
+        for titulo, largura in colunas:
+            tk.Label(
+                cabecalho, text=titulo, font=("Segoe UI", 9, "bold"), bg="#e5e7eb", fg=COR_TEXTO,
+                width=largura, anchor="w", padx=6, pady=6,
+            ).pack(side="left")
+        tk.Frame(cabecalho, bg="#e5e7eb", width=120).pack(side="left")
+
+        area = tk.Frame(container, bg=COR_CARD)
+        area.pack(fill="both", expand=True)
+        canvas = tk.Canvas(area, bg=COR_CARD, highlightthickness=0)
+        scroll_v = ttk.Scrollbar(area, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll_v.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll_v.pack(side="right", fill="y")
+
+        corpo = tk.Frame(canvas, bg=COR_CARD)
+        janela = canvas.create_window((0, 0), window=corpo, anchor="nw")
+        corpo.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>", lambda e: canvas.itemconfig(janela, width=e.width))
+
+        rolar = lambda e: canvas.yview_scroll(int(-e.delta / 40), "units")
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", rolar))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        return corpo
+
+    def _linha_lista(self, corpo, valores_larguras, texto_botao, comando):
+        linha = tk.Frame(corpo, bg=COR_CARD)
+        linha.pack(fill="x")
+        for valor, largura in valores_larguras:
+            tk.Label(
+                linha, text=valor, width=largura, anchor="w", justify="left",
+                wraplength=largura * 7, bg=COR_CARD, fg=COR_TEXTO,
+                font=("Segoe UI", 9), padx=6, pady=6,
+            ).pack(side="left", fill="y")
+        botao = ttk.Button(linha, text=texto_botao, command=comando)
+        botao.pack(side="left", padx=8, pady=4)
+        tk.Frame(corpo, bg="#e5e7eb", height=1).pack(fill="x")
+        return botao
+
+    def _ver_detalhe(self, titulo, linhas):
+        top = tk.Toplevel(self)
+        top.title(titulo)
+        top.configure(bg=COR_CARD)
+        top.geometry("520x320")
+        texto = tk.Text(
+            top, wrap="word", font=("Segoe UI", 10), bg=COR_CARD, fg=COR_TEXTO,
+            relief="flat", padx=12, pady=12,
+        )
+        texto.insert("1.0", "\n".join(linhas))
+        texto.config(state="disabled")
+        texto.pack(fill="both", expand=True, padx=16, pady=(16, 8))
+        ttk.Button(top, text="Fechar", command=top.destroy).pack(pady=(0, 12))
+        top.transient(self)
+        top.grab_set()
 
     # ------------------------------------------------------------------
     def _montar_layout(self):
@@ -174,43 +261,23 @@ class App(tk.Tk):
         entrada_filtro.pack(side="left", fill="x", expand=True)
 
         # --- Tabela de produtos ---
-        colunas = ("sku", "nome", "estoque", "preco")
-        self.tabela = ttk.Treeview(aba_produtos, columns=colunas, show="headings")
-        self.tabela.heading("sku", text="SKU")
-        self.tabela.heading("nome", text="Produto")
-        self.tabela.heading("estoque", text="Estoque (antes → depois)")
-        self.tabela.heading("preco", text="Preço (antes → depois)")
+        self.tabela = self._criar_tabela(
+            aba_produtos,
+            ("sku", "nome", "estoque", "preco"),
+            ("SKU", "Produto", "Estoque (antes → depois)", "Preço (antes → depois)"),
+            {"sku": 70, "sku_anchor": "center", "nome": 320, "estoque": 180, "estoque_anchor": "center",
+             "preco": 180, "preco_anchor": "center"},
+        )
+        self.tabela.bind("<Double-1>", self._ver_detalhe_produto)
 
-        self.tabela.column("sku", width=70, anchor="center")
-        self.tabela.column("nome", width=280)
-        self.tabela.column("estoque", width=200, anchor="center")
-        self.tabela.column("preco", width=200, anchor="center")
-
-        scroll_produtos = ttk.Scrollbar(aba_produtos, orient="vertical", command=self.tabela.yview)
-        self.tabela.configure(yscrollcommand=scroll_produtos.set)
-
-        self.tabela.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=16)
-        scroll_produtos.pack(side="right", fill="y", padx=(0, 16), pady=16)
-
-        # --- Tabela de erros ---
-        colunas_erro = ("sku", "nome", "estoque", "preco", "mensagem")
-        self.tabela_erros = ttk.Treeview(aba_erros, columns=colunas_erro, show="headings")
-        self.tabela_erros.heading("sku", text="SKU")
-        self.tabela_erros.heading("nome", text="Produto")
-        self.tabela_erros.heading("estoque", text="Estoque (antes → depois)")
-        self.tabela_erros.heading("preco", text="Preço (antes → depois)")
-        self.tabela_erros.heading("mensagem", text="Mensagem de erro")
-        self.tabela_erros.column("sku", width=70, anchor="center")
-        self.tabela_erros.column("nome", width=200)
-        self.tabela_erros.column("estoque", width=150, anchor="center")
-        self.tabela_erros.column("preco", width=150, anchor="center")
-        self.tabela_erros.column("mensagem", width=280)
-
-        scroll_erros = ttk.Scrollbar(aba_erros, orient="vertical", command=self.tabela_erros.yview)
-        self.tabela_erros.configure(yscrollcommand=scroll_erros.set)
-
-        self.tabela_erros.pack(side="left", fill="both", expand=True, padx=(16, 0), pady=16)
-        scroll_erros.pack(side="right", fill="y", padx=(0, 16), pady=16)
+        # --- Lista de erros ---
+        self._corpo_erros = self._criar_lista(
+            aba_erros,
+            [("SKU", 6), ("Produto", 26), ("Estoque (antes → depois)", 16),
+             ("Preço (antes → depois)", 14), ("Mensagem de erro", 42)],
+        )
+        self._erros_por_sku = {}
+        self._botoes_erro = {}
 
         tk.Label(
             aba_alertas,
@@ -218,35 +285,14 @@ class App(tk.Tk):
             font=("Segoe UI", 9), bg=COR_CARD, fg=COR_TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=16, pady=(12, 0))
 
-        colunas_alerta = ("sku", "nome_banco", "nome_magazord", "estoque", "preco", "motivo")
-        self.tabela_alertas = ttk.Treeview(aba_alertas, columns=colunas_alerta, show="headings", selectmode="browse")
-        self.tabela_alertas.heading("sku", text="SKU")
-        self.tabela_alertas.heading("nome_banco", text="Produto (banco)")
-        self.tabela_alertas.heading("nome_magazord", text="Produto (Magazord)")
-        self.tabela_alertas.heading("estoque", text="Estoque (Magazord → banco)")
-        self.tabela_alertas.heading("preco", text="Preço (Magazord → banco)")
-        self.tabela_alertas.heading("motivo", text="Motivo")
-        self.tabela_alertas.column("sku", width=60, anchor="center")
-        self.tabela_alertas.column("nome_banco", width=220)
-        self.tabela_alertas.column("nome_magazord", width=220)
-        self.tabela_alertas.column("estoque", width=150, anchor="center")
-        self.tabela_alertas.column("preco", width=150, anchor="center")
-        self.tabela_alertas.column("motivo", width=200)
-
-        scroll_alertas = ttk.Scrollbar(aba_alertas, orient="vertical", command=self.tabela_alertas.yview)
-        self.tabela_alertas.configure(yscrollcommand=scroll_alertas.set)
-
-        self.tabela_alertas.pack(side="top", fill="both", expand=True, padx=(16, 0), pady=(8, 0))
-        scroll_alertas.pack(side="right", fill="y", padx=(0, 16), pady=(8, 0))
-
-        self.botao_aprovar = ttk.Button(
-            aba_alertas, text="Sincronizar selecionado",
-            style="Primaria.TButton", command=self.aprovar_alerta_selecionado,
+        # --- Lista de alertas ---
+        self._corpo_alertas = self._criar_lista(
+            aba_alertas,
+            [("SKU", 5), ("Produto (banco)", 24), ("Produto (Magazord)", 24),
+             ("Estoque (Magazord → banco)", 16), ("Preço (Magazord → banco)", 14), ("Motivo", 18)],
         )
-        self.botao_aprovar.pack(anchor="e", padx=16, pady=12)
-        self.tabela_alertas.bind("<<TreeviewSelect>>", lambda _: self._atualizar_botao_aprovar())
         self._alertas_por_sku = {}
-        self._atualizar_botao_aprovar()
+        self._botoes_alerta = {}
 
     # ------------------------------------------------------------------
     def _atualizar_titulo_aba_erros(self, total_erros):
@@ -278,51 +324,58 @@ class App(tk.Tk):
         self._produtos_cache = status["produtos"]
         self._filtrar_produtos()
 
-        for item in self.tabela_erros.get_children():
-            self.tabela_erros.delete(item)
+        for widget in self._corpo_erros.winfo_children():
+            widget.destroy()
+        self._erros_por_sku = {}
+        self._botoes_erro = {}
         for e in status["erros"]:
+            sku = e["sku"]
+            self._erros_por_sku[sku] = e
             estoque_txt = f"{e.get('estoque_antigo', '-')}  →  {e.get('estoque_novo', '-')}"
             preco_txt = f"{e.get('preco_antigo', '-')}  →  {e.get('preco_novo', '-')}"
-            self.tabela_erros.insert(
-                "", "end",
-                values=(e["sku"], e.get("nome", ""), estoque_txt, preco_txt, e["mensagem"]),
+            self._botoes_erro[sku] = self._linha_lista(
+                self._corpo_erros,
+                [(sku, 6), (e.get("nome", ""), 26), (estoque_txt, 16), (preco_txt, 14), (e["mensagem"], 42)],
+                "↻ Tentar de novo",
+                lambda sku=sku: self._iniciar_tentar_de_novo(sku),
             )
 
         self._atualizar_titulo_aba_erros(status["total_erros"])
 
-        for item in self.tabela_alertas.get_children():
-            self.tabela_alertas.delete(item)
+        for widget in self._corpo_alertas.winfo_children():
+            widget.destroy()
         self._alertas_por_sku = {}
+        self._botoes_alerta = {}
         for a in status.get("alertas", []):
-            self._alertas_por_sku[a["sku"]] = a
-            self.tabela_alertas.insert(
-                "", "end", iid=a["sku"],
-                values=(
-                    a["sku"],
-                    a["nome_banco"],
-                    a["nome_magazord"],
-                    f"{a.get('estoque_antigo', '-')}  →  {a.get('estoque_novo', '-')}",
-                    f"{a.get('preco_antigo', '-')}  →  {a.get('preco_novo', '-')}",
-                    ", ".join(a["motivos"]),
-                ),
+            sku = a["sku"]
+            self._alertas_por_sku[sku] = a
+            self._botoes_alerta[sku] = self._linha_lista(
+                self._corpo_alertas,
+                [
+                    (sku, 5), (a["nome_banco"], 24), (a["nome_magazord"], 24),
+                    (f"{a.get('estoque_antigo', '-')}  →  {a.get('estoque_novo', '-')}", 16),
+                    (f"{a.get('preco_antigo', '-')}  →  {a.get('preco_novo', '-')}", 14),
+                    (", ".join(a["motivos"]), 18),
+                ],
+                "▶ Sincronizar",
+                lambda sku=sku: self._iniciar_aprovar_alerta(sku),
             )
 
         self._atualizar_titulo_aba_alertas(len(status.get("alertas", [])))
-        self._atualizar_botao_aprovar()
 
-    def _atualizar_botao_aprovar(self):
-        selecionado = self.tabela_alertas.selection()
-        estado = "normal" if selecionado and str(self.botao_rerun["state"]) != "disabled" else "disabled"
-        self.botao_aprovar.config(state=estado)
+    # ------------------------------------------------------------------
+    def _ocupado(self):
+        return str(self.botao_rerun["state"]) == "disabled"
 
-    def aprovar_alerta_selecionado(self):
-        selecionado = self.tabela_alertas.selection()
-        if not selecionado:
+    def _iniciar_aprovar_alerta(self, sku):
+        if self._ocupado():
             return
-        item = self._alertas_por_sku[selecionado[0]]
+        item = self._alertas_por_sku.get(sku)
+        if not item:
+            return
         confirmado = messagebox.askyesno(
             "Confirmar sincronização",
-            f"SKU {item['sku']} — {item['nome_banco']}\n\n"
+            f"SKU {sku} — {item['nome_banco']}\n\n"
             f"Estoque: {item.get('estoque_antigo', '-')} → {item['estoque_novo']}\n"
             f"Preço: {item.get('preco_antigo', '-')} → {item['preco_novo']}\n\n"
             f"Motivo: {', '.join(item['motivos'])}\n\n"
@@ -331,7 +384,9 @@ class App(tk.Tk):
         )
         if not confirmado:
             return
-        self.botao_aprovar.config(state="disabled")
+        botao = self._botoes_alerta.get(sku)
+        if botao:
+            botao.config(state="disabled", text="Enviando...")
         threading.Thread(target=self._aprovar_em_thread, args=(item,), daemon=True).start()
 
     def _aprovar_em_thread(self, item):
@@ -346,6 +401,41 @@ class App(tk.Tk):
         if not ok:
             messagebox.showerror("Falha ao sincronizar", f"SKU {sku}: {mensagem}", parent=self)
         self.carregar_tela()
+
+    def _iniciar_tentar_de_novo(self, sku):
+        if self._ocupado():
+            return
+        item = self._erros_por_sku.get(sku)
+        if not item:
+            return
+        botao = self._botoes_erro.get(sku)
+        if botao:
+            botao.config(state="disabled", text="Tentando...")
+        threading.Thread(target=self._tentar_de_novo_em_thread, args=(item,), daemon=True).start()
+
+    def _tentar_de_novo_em_thread(self, item):
+        try:
+            resultado, mensagem = sync_engine.tentar_novamente(item)
+        except Exception as e:
+            logging.exception("Falha ao tentar de novo")
+            resultado, mensagem = "erro", str(e)
+        self.after(0, lambda: self._finalizou_tentativa(item["sku"], resultado, mensagem))
+
+    def _finalizou_tentativa(self, sku, resultado, mensagem):
+        if resultado == "sincronizado":
+            messagebox.showinfo("Sincronizado", f"SKU {sku}: {mensagem}", parent=self)
+        elif resultado == "alerta":
+            messagebox.showinfo("Movido para Alertas", f"SKU {sku}: {mensagem}", parent=self)
+        else:
+            messagebox.showerror("Ainda bloqueado", f"SKU {sku}: {mensagem}", parent=self)
+        self.carregar_tela()
+
+    def _ver_detalhe_produto(self, _event):
+        sel = self.tabela.selection()
+        if not sel:
+            return
+        sku, nome, estoque, preco = self.tabela.item(sel[0], "values")
+        self._ver_detalhe(f"Produto — SKU {sku}", [f"Produto: {nome}", f"Estoque: {estoque}", f"Preço: {preco}"])
 
     # ------------------------------------------------------------------
     def _filtrar_produtos(self):
@@ -364,7 +454,8 @@ class App(tk.Tk):
     # ------------------------------------------------------------------
     def rodar_sincronizacao(self):
         self.botao_rerun.config(state="disabled", text="Sincronizando...")
-        self._atualizar_botao_aprovar()
+        for botao in list(self._botoes_erro.values()) + list(self._botoes_alerta.values()):
+            botao.config(state="disabled")
         self.progresso.pack(anchor="e", fill="x", pady=(8, 0))
         self.progresso.configure(mode="indeterminate")
         self.progresso.start(10)
@@ -388,7 +479,6 @@ class App(tk.Tk):
         resumo = " ".join(mensagem.split())[:160]
         self.label_status_titulo.config(text="⚠ Falha ao sincronizar", fg=COR_ERRO)
         self.label_status_detalhe.config(text=f"{resumo}  (detalhes em logs/sync.log)")
-        self._atualizar_botao_aprovar()
 
     def _progresso_thread_segura(self, atual, total):
         self.after(0, lambda: self._atualizar_progresso(atual, total))

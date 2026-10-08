@@ -33,6 +33,14 @@ def _mensagem_nome_divergente(sku, nome, nome_magazord, catalogo):
     return msg
 
 
+def _ja_igual(ref, produto):
+    return (
+        ref.get("estoque") == produto["estoque"]
+        and ref.get("preco") is not None
+        and abs(ref["preco"] - produto["preco"]) < 0.005
+    )
+
+
 def _falhas_http(resp_estoque, resp_preco):
     return [
         f"{rotulo} {resp.status_code}: {' '.join(resp.text.split())[:200]}"
@@ -99,6 +107,8 @@ def executar_sincronizacao(on_progress=None):
         elif not nomes_conferem(nome, ref["nome"]):
             mensagem = _mensagem_nome_divergente(sku, nome, ref["nome"], catalogo)
             erros.append({**dados, "mensagem": mensagem})
+        elif _ja_igual(ref, produto):
+            novo_estado[sku] = {"estoque": produto["estoque"], "preco": produto["preco"]}
         else:
             motivos = _motivos_do_item(ref, produto["estoque"], produto["preco"])
             if motivos:
@@ -173,3 +183,63 @@ def sincronizar_alerta(item):
     )
     logging.info(f"SKU {sku} aprovado e sincronizado manualmente")
     return True, "sincronizado"
+
+
+def tentar_novamente(item):
+    """Tenta de novo um item que tinha ficado em erro (SKU não encontrada ou nome
+    divergente). Reconsulta a Magazord: se continuar bloqueado, devolve o novo
+    motivo; se a variação for grande, vira alerta; senão grava normalmente.
+
+    Retorna (resultado, mensagem), onde resultado é "sincronizado", "alerta" ou "erro".
+    """
+    sku = item["sku"]
+    nome = item["nome"]
+    catalogo = magazord_api.listar_produtos_magazord()
+    ref = catalogo.get(sku, {})
+
+    if not ref:
+        return "erro", "SKU não encontrada na Magazord"
+    if not nomes_conferem(nome, ref["nome"]):
+        return "erro", _mensagem_nome_divergente(sku, nome, ref["nome"], catalogo)
+
+    status = status_manager.carregar_status()
+    restantes_erros = [e for e in status.get("erros", []) if e["sku"] != sku]
+
+    motivos = _motivos_do_item(ref, item["estoque_novo"], item["preco_novo"])
+    if motivos:
+        produto = {"estoque": item["estoque_novo"], "preco": item["preco_novo"]}
+        alertas = status.get("alertas", []) + [_pendente(sku, nome, ref, produto, motivos)]
+        status_manager.salvar_status(
+            sucesso=not restantes_erros,
+            produtos_sincronizados=status.get("produtos", []),
+            erros=restantes_erros,
+            alertas=alertas,
+        )
+        return "alerta", f"nome confere agora, mas com variação grande ({', '.join(motivos)}). Foi para a aba Alertas"
+
+    resp_estoque = magazord_api.atualizar_estoque(sku, item["estoque_novo"])
+    resp_preco = magazord_api.atualizar_preco(sku, item["preco_novo"])
+    falhas = _falhas_http(resp_estoque, resp_preco)
+    if falhas:
+        return "erro", " | ".join(falhas)
+
+    estado = state_manager.carregar_estado()
+    estado[sku] = {"estoque": item["estoque_novo"], "preco": item["preco_novo"]}
+    state_manager.salvar_estado(estado)
+
+    produtos = status.get("produtos", []) + [{
+        "sku": sku,
+        "nome": nome,
+        "estoque_antigo": ref.get("estoque"),
+        "estoque_novo": item["estoque_novo"],
+        "preco_antigo": ref.get("preco"),
+        "preco_novo": item["preco_novo"],
+    }]
+    status_manager.salvar_status(
+        sucesso=not restantes_erros,
+        produtos_sincronizados=produtos,
+        erros=restantes_erros,
+        alertas=status.get("alertas", []),
+    )
+    logging.info(f"SKU {sku} corrigido e sincronizado manualmente")
+    return "sincronizado", "atualizado com sucesso"
