@@ -5,19 +5,21 @@ import subprocess
 import sys
 import urllib.request
 
+import versao as _versao_build
+
 REPO = "higormatheuspaes/inda-motos-sync"
 URL_RELEASE = f"https://api.github.com/repos/{REPO}/releases/tags/latest"
-ARQUIVO_VERSAO = "versao.txt"
 NOME_EXE = "sync_inda_motos.exe"
 NOME_EXE_NOVO = "sync_inda_motos.exe.novo"
 NOME_SCRIPT_TROCA = "_aplicar_atualizacao.bat"
+VERSAO_DEV = "local"
 
 
 def versao_local():
-    if not os.path.exists(ARQUIVO_VERSAO):
-        return None
-    with open(ARQUIVO_VERSAO, "r", encoding="ascii") as f:
-        return f.read().strip()
+    """A versão desse build é gravada dentro do próprio .exe na hora da
+    compilação (ver src/versao.py e o workflow de build) — não depende de
+    nenhum arquivo solto que possa se perder numa troca manual."""
+    return _versao_build.VERSAO
 
 
 def _info_remota():
@@ -35,10 +37,12 @@ def _info_remota():
 def verificar_atualizacao():
     """Retorna (versao_remota, url_exe) se houver uma versão nova, ou None.
 
-    Na primeira execução (sem versao.txt local ainda) só grava a versão
-    atual como referência, sem disparar atualização — presume-se que o
-    .exe já instalado é a versão corrente.
+    Em modo de desenvolvimento (rodando direto do código-fonte, sem ser pelo
+    .exe compilado) não verifica nada, pra não atrapalhar quem está mexendo
+    no código.
     """
+    if versao_local() == VERSAO_DEV:
+        return None
     try:
         info = _info_remota()
     except Exception:
@@ -48,12 +52,7 @@ def verificar_atualizacao():
         return None
 
     versao_remota, url_exe = info
-    versao_atual = versao_local()
-    if versao_atual is None:
-        with open(ARQUIVO_VERSAO, "w", encoding="ascii") as f:
-            f.write(versao_remota)
-        return None
-    if versao_remota == versao_atual:
+    if versao_remota == versao_local():
         return None
     return versao_remota, url_exe
 
@@ -61,15 +60,16 @@ def verificar_atualizacao():
 def aplicar_atualizacao(versao_remota, url_exe, argumentos_relancar=()):
     """Baixa o .exe novo e prepara a troca. Quem chamou precisa encerrar o
     processo atual logo em seguida (a troca só acontece depois que o .exe
-    atual for fechado, por isso o script de troca espera alguns segundos)."""
+    atual for fechado, por isso o script de troca espera alguns segundos).
+
+    versao_remota não precisa ser gravada em lugar nenhum: a versão do .exe
+    novo já vem certa, embutida nele mesmo desde a compilação.
+    """
     req = urllib.request.Request(url_exe, headers={"User-Agent": "inda-motos-sync-updater"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         conteudo = resp.read()
     with open(NOME_EXE_NOVO, "wb") as f:
         f.write(conteudo)
-
-    with open(ARQUIVO_VERSAO, "w", encoding="ascii") as f:
-        f.write(versao_remota)
 
     argumentos = " ".join(argumentos_relancar)
     script = (

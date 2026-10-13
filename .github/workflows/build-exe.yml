@@ -24,6 +24,12 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: Gravar a versão dentro do código-fonte
+        shell: pwsh
+        run: |
+          $sha = "${{ github.sha }}"
+          "VERSAO = `"$sha`"`n" | Out-File -FilePath src/versao.py -Encoding utf8 -NoNewline
+
       - name: Gerar executável
         run: pyinstaller sync_inda_motos.spec
 
@@ -37,7 +43,6 @@ jobs:
           Copy-Item dist/sync_inda_motos.exe pacote/
           Copy-Item -Recurse assets pacote/assets
           Copy-Item .env.example pacote/.env.example
-          Copy-Item versao.txt pacote/versao.txt
           Compress-Archive -Path pacote/* -DestinationPath sync_inda_motos.zip
 
       - name: Publicar release
