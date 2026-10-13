@@ -6,6 +6,8 @@ import config
 # Documentação: https://docs-v2.api.magazord.com.br/
 TIPO_ESTOQUE_FISICO = 1
 OPERACAO_AJUSTE = 0
+OPERACAO_ENTRADA = 1
+ORIGEM_ENTRADA_ACERTO_SEM_VALORIZACAO = 1
 
 
 def _headers():
@@ -67,15 +69,24 @@ def _post(caminho, payload):
     return resp
 
 
-def atualizar_estoque(sku, quantidade):
-    """POST /v1/estoque: ajusta o estoque físico do produto para a quantidade informada."""
+def atualizar_estoque(sku, quantidade, criar_registro=False):
+    """POST /v1/estoque.
+
+    Por padrão ajusta o estoque físico do produto para a quantidade informada
+    (idempotente). Quando criar_registro=True (produto sem registro de estoque
+    na Magazord ainda), usa uma Entrada em vez de Ajuste — a Magazord não cria
+    o registro com uma Ajuste de quantidade 0, mas aceita numa Entrada
+    (confirmado com a Magazord em 12/10/2026, testado com os SKUs 2 e 7).
+    """
     payload = {
         "produto": sku,
         "deposito": _exigir(config.MAGAZORD_DEPOSITO, "MAGAZORD_DEPOSITO"),
         "quantidade": int(quantidade),
         "tipo": TIPO_ESTOQUE_FISICO,
-        "tipoOperacao": OPERACAO_AJUSTE,
+        "tipoOperacao": OPERACAO_ENTRADA if criar_registro else OPERACAO_AJUSTE,
     }
+    if criar_registro:
+        payload["origemMovimento"] = ORIGEM_ENTRADA_ACERTO_SEM_VALORIZACAO
     return _post("/v1/estoque", payload)
 
 

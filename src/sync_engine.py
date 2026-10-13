@@ -17,9 +17,7 @@ def _motivos_do_item(ref, estoque_novo, preco_novo):
         if abs(variacao) > LIMITE_VARIACAO_PRECO:
             motivos.append(f"preço mudou {variacao:+.0%}")
     estoque_ref = ref.get("estoque")
-    if estoque_ref is None:
-        motivos.append("sem registro de estoque na Magazord; crie o registro no painel")
-    elif estoque_ref != 0:
+    if estoque_ref is not None and estoque_ref != 0:
         if estoque_novo == 0:
             motivos.append("estoque zerou")
         elif abs(estoque_novo - estoque_ref) / estoque_ref > LIMITE_VARIACAO_ESTOQUE:
@@ -118,7 +116,9 @@ def executar_sincronizacao(on_progress=None):
                 alertas.append(_pendente(sku, nome, ref, produto, motivos))
             else:
                 try:
-                    resp_estoque = magazord_api.atualizar_estoque(sku, produto["estoque"])
+                    resp_estoque = magazord_api.atualizar_estoque(
+                        sku, produto["estoque"], criar_registro=ref.get("estoque") is None
+                    )
                     resp_preco = magazord_api.atualizar_preco(sku, produto["preco"])
                     falhas = _falhas_http(resp_estoque, resp_preco)
                     if falhas:
@@ -158,7 +158,9 @@ def executar_sincronizacao(on_progress=None):
 def sincronizar_alerta(item):
     """Grava um item que estava aguardando aprovação e o tira da lista de alertas."""
     sku = item["sku"]
-    resp_estoque = magazord_api.atualizar_estoque(sku, item["estoque_novo"])
+    resp_estoque = magazord_api.atualizar_estoque(
+        sku, item["estoque_novo"], criar_registro=item.get("estoque_antigo") is None
+    )
     resp_preco = magazord_api.atualizar_preco(sku, item["preco_novo"])
     falhas = _falhas_http(resp_estoque, resp_preco)
     if falhas:
@@ -220,7 +222,9 @@ def tentar_novamente(item):
         )
         return "alerta", f"nome confere agora, mas com variação grande ({', '.join(motivos)}). Foi para a aba Alertas"
 
-    resp_estoque = magazord_api.atualizar_estoque(sku, item["estoque_novo"])
+    resp_estoque = magazord_api.atualizar_estoque(
+        sku, item["estoque_novo"], criar_registro=ref.get("estoque") is None
+    )
     resp_preco = magazord_api.atualizar_preco(sku, item["preco_novo"])
     falhas = _falhas_http(resp_estoque, resp_preco)
     if falhas:
