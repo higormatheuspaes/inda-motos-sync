@@ -211,8 +211,8 @@ class App(tk.Tk):
 
         versao = atualizador.versao_local()
         subtitulo = "Estoque e preço — Firebird → Magazord"
-        if versao:
-            subtitulo += f"  •  versão {versao[:7]}"
+        if versao and versao != "local":
+            subtitulo = f"versão {versao[:7]}  •  {subtitulo}"
         tk.Label(
             header, text=subtitulo,
             font=("Segoe UI", 10), bg=COR_FUNDO, fg=COR_TEXTO_SECUNDARIO,
