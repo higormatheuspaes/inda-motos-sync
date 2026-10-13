@@ -20,7 +20,11 @@ COR_PRIMARIA_HOVER = "#1d4ed8"
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Sincronização Inda Motos")
+        versao = atualizador.versao_local()
+        titulo = "Sincronização Inda Motos"
+        if versao and versao != "local":
+            titulo += f" — build {versao[:7]}"
+        self.title(titulo)
         self.geometry("1100x700")
         self.minsize(900, 560)
         self.resizable(True, True)
