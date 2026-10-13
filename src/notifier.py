@@ -45,21 +45,21 @@ def _texto(sincronizados, erros, alertas):
             partes.append(f"    estoque {_estoque(e)} | preço {_preco(e)}")
         partes.append("")
     if alertas:
-        partes.append(f"AGUARDANDO APROVAÇÃO ({len(alertas)}) - NÃO foram enviados à Magazord:")
-        partes.append("Revise e sincronize na tela do sistema, um a um.")
+        partes.append(f"ALERTAS ({len(alertas)}) - já sincronizados, mas com variação grande:")
+        partes.append("Revise na tela do sistema; se algum não devia ter mudado assim, dá pra reverter.")
         for a in alertas:
             partes.append(f"- SKU {a['sku']}: banco \"{a['nome_banco']}\" | Magazord \"{a['nome_magazord']}\"")
-            partes.append(f"    estoque {_pendente_estoque(a)} | preço {_pendente_preco(a)}")
+            partes.append(f"    estoque {_alerta_estoque(a)} | preço {_alerta_preco(a)}")
             partes.append(f"    motivo: {', '.join(a['motivos'])}")
         partes.append("")
     return "\n".join(partes)
 
 
-def _pendente_estoque(a):
+def _alerta_estoque(a):
     return f"{a.get('estoque_antigo', '-')} → {a.get('estoque_novo', '-')}"
 
 
-def _pendente_preco(a):
+def _alerta_preco(a):
     return f"{a.get('preco_antigo', '-')} → {a.get('preco_novo', '-')}"
 
 
@@ -121,13 +121,13 @@ def _montar_html(sincronizados, erros, alertas, com_logo):
         ],
     )
     secao_alertas = _secao(
-        "Aguardando aprovação (NÃO enviados à Magazord)", COR_ALERTA,
+        "Alertas (já sincronizados — revise)", COR_ALERTA,
         ["SKU", "Produto (banco / Magazord)", "Estoque", "Preço", "Motivo"],
         [
             f"<tr>{_celula(a['sku'])}"
             f"{_celula(a['nome_banco'] + ' / ' + a['nome_magazord'])}"
-            f"{_celula(_pendente_estoque(a), COR_TEXTO_SECUNDARIO, True)}"
-            f"{_celula(_pendente_preco(a), COR_TEXTO_SECUNDARIO, True)}"
+            f"{_celula(_alerta_estoque(a), COR_TEXTO_SECUNDARIO, True)}"
+            f"{_celula(_alerta_preco(a), COR_TEXTO_SECUNDARIO, True)}"
             f"{_celula(', '.join(a['motivos']), COR_ALERTA)}</tr>"
             for a in alertas
         ],
@@ -169,7 +169,7 @@ def _montar_html(sincronizados, erros, alertas, com_logo):
 def _assunto(sincronizados, erros, alertas):
     if erros:
         return f"⚠ Sincronização Inda Motos — {len(erros)} erro(s), {len(sincronizados)} atualizado(s)"
-    return f"Sincronização Inda Motos — {len(sincronizados)} atualizado(s), {len(alertas)} aguardando aprovação"
+    return f"Sincronização Inda Motos — {len(sincronizados)} atualizado(s), {len(alertas)} alerta(s)"
 
 
 def enviar_relatorio(sincronizados, erros, alertas):

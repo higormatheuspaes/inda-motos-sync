@@ -281,7 +281,8 @@ class App(tk.Tk):
 
         tk.Label(
             aba_alertas,
-            text="Itens com variação grande. Não foram enviados à Magazord: confira e sincronize um a um.",
+            text="Itens com variação grande de preço/estoque. Já foram enviados à Magazord — confira, e se "
+                 "algum não devia ter mudado assim, clique em Reverter.",
             font=("Segoe UI", 9), bg=COR_CARD, fg=COR_TEXTO_SECUNDARIO,
         ).pack(anchor="w", padx=16, pady=(12, 0))
 
@@ -357,8 +358,8 @@ class App(tk.Tk):
                     (f"{a.get('preco_antigo', '-')}  →  {a.get('preco_novo', '-')}", 14),
                     (", ".join(a["motivos"]), 18),
                 ],
-                "▶ Sincronizar",
-                lambda sku=sku: self._iniciar_aprovar_alerta(sku),
+                "↺ Reverter",
+                lambda sku=sku: self._iniciar_reverter_alerta(sku),
             )
 
         self._atualizar_titulo_aba_alertas(len(status.get("alertas", [])))
@@ -367,39 +368,40 @@ class App(tk.Tk):
     def _ocupado(self):
         return str(self.botao_rerun["state"]) == "disabled"
 
-    def _iniciar_aprovar_alerta(self, sku):
+    def _iniciar_reverter_alerta(self, sku):
         if self._ocupado():
             return
         item = self._alertas_por_sku.get(sku)
         if not item:
             return
         confirmado = messagebox.askyesno(
-            "Confirmar sincronização",
+            "Confirmar reversão",
             f"SKU {sku} — {item['nome_banco']}\n\n"
-            f"Estoque: {item.get('estoque_antigo', '-')} → {item['estoque_novo']}\n"
-            f"Preço: {item.get('preco_antigo', '-')} → {item['preco_novo']}\n\n"
-            f"Motivo: {', '.join(item['motivos'])}\n\n"
-            "Enviar esta alteração para a Magazord?",
+            f"Isso vai voltar na Magazord para os valores de antes desta sincronização:\n"
+            f"Estoque: {item['estoque_novo']} → {item.get('estoque_antigo', '-')}\n"
+            f"Preço: {item['preco_novo']} → {item.get('preco_antigo', '-')}\n\n"
+            f"Motivo do alerta: {', '.join(item['motivos'])}\n\n"
+            "Reverter esse item?",
             parent=self,
         )
         if not confirmado:
             return
         botao = self._botoes_alerta.get(sku)
         if botao:
-            botao.config(state="disabled", text="Enviando...")
-        threading.Thread(target=self._aprovar_em_thread, args=(item,), daemon=True).start()
+            botao.config(state="disabled", text="Revertendo...")
+        threading.Thread(target=self._reverter_em_thread, args=(item,), daemon=True).start()
 
-    def _aprovar_em_thread(self, item):
+    def _reverter_em_thread(self, item):
         try:
-            ok, mensagem = sync_engine.sincronizar_alerta(item)
+            ok, mensagem = sync_engine.reverter_alerta(item)
         except Exception as e:
-            logging.exception("Falha ao sincronizar item aprovado")
+            logging.exception("Falha ao reverter alerta")
             ok, mensagem = False, str(e)
-        self.after(0, lambda: self._finalizou_aprovacao(item["sku"], ok, mensagem))
+        self.after(0, lambda: self._finalizou_reversao(item["sku"], ok, mensagem))
 
-    def _finalizou_aprovacao(self, sku, ok, mensagem):
+    def _finalizou_reversao(self, sku, ok, mensagem):
         if not ok:
-            messagebox.showerror("Falha ao sincronizar", f"SKU {sku}: {mensagem}", parent=self)
+            messagebox.showerror("Falha ao reverter", f"SKU {sku}: {mensagem}", parent=self)
         self.carregar_tela()
 
     def _iniciar_tentar_de_novo(self, sku):

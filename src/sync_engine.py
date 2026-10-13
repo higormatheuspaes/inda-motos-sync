@@ -4,7 +4,6 @@ import magazord_api
 import state_manager
 import status_manager
 import notifier
-from conferencia import nomes_conferem, sugerir_codigo
 
 LIMITE_VARIACAO_PRECO = 0.20
 LIMITE_VARIACAO_ESTOQUE = 0.50
@@ -25,15 +24,6 @@ def _motivos_do_item(ref, estoque_novo, preco_novo):
     return motivos
 
 
-def _mensagem_nome_divergente(sku, nome, nome_magazord, catalogo):
-    msg = f"nome não confere com o código na Magazord (\"{nome_magazord}\")"
-    sugestao = sugerir_codigo(nome, catalogo, excluir=sku)
-    if sugestao:
-        codigo, nome_sugerido = sugestao
-        msg += f". Mais parecido: código {codigo}, \"{nome_sugerido}\""
-    return msg
-
-
 def _ja_igual(ref, produto):
     return (
         ref.get("estoque") == produto["estoque"]
@@ -50,7 +40,9 @@ def _falhas_http(resp_estoque, resp_preco):
     ]
 
 
-def _pendente(sku, nome_banco, ref, produto, motivos):
+def _alerta(sku, nome_banco, ref, produto, motivos):
+    """Registro informativo de um item que JÁ FOI gravado, mas com variação
+    grande o suficiente pra merecer revisão (ver reverter_alerta)."""
     return {
         "sku": sku,
         "nome_banco": nome_banco,
@@ -63,11 +55,18 @@ def _pendente(sku, nome_banco, ref, produto, motivos):
     }
 
 
+def _gravar(sku, estoque_novo, preco_novo, ref):
+    resp_estoque = magazord_api.atualizar_estoque(sku, estoque_novo, criar_registro=ref.get("estoque") is None)
+    resp_preco = magazord_api.atualizar_preco(sku, preco_novo)
+    return _falhas_http(resp_estoque, resp_preco)
+
+
 def executar_sincronizacao(on_progress=None):
     """Roda a sincronização e retorna um resumo (usado pela GUI e pelo modo --sync).
 
-    Itens com alerta de variação não são gravados: ficam em "alertas" para
-    aprovação individual na tela (ver sincronizar_alerta).
+    Sincroniza direto pelo SKU, sem conferir se o nome do banco bate com o da
+    Magazord. Itens com variação grande de preço/estoque são gravados do
+    mesmo jeito, mas entram em "alertas" para revisão (ver reverter_alerta).
 
     on_progress, se informado, é chamado como on_progress(atual, total) antes
     de processar o primeiro item (atual=0) e após cada item processado.
@@ -105,30 +104,22 @@ def executar_sincronizacao(on_progress=None):
 
         if not ref:
             erros.append({**dados, "mensagem": "SKU não encontrada na Magazord"})
-        elif not nomes_conferem(nome, ref["nome"]):
-            mensagem = _mensagem_nome_divergente(sku, nome, ref["nome"], catalogo)
-            erros.append({**dados, "mensagem": mensagem})
         elif _ja_igual(ref, produto):
             novo_estado[sku] = {"estoque": produto["estoque"], "preco": produto["preco"]}
         else:
-            motivos = _motivos_do_item(ref, produto["estoque"], produto["preco"])
-            if motivos:
-                alertas.append(_pendente(sku, nome, ref, produto, motivos))
-            else:
-                try:
-                    resp_estoque = magazord_api.atualizar_estoque(
-                        sku, produto["estoque"], criar_registro=ref.get("estoque") is None
-                    )
-                    resp_preco = magazord_api.atualizar_preco(sku, produto["preco"])
-                    falhas = _falhas_http(resp_estoque, resp_preco)
-                    if falhas:
-                        erros.append({**dados, "mensagem": " | ".join(falhas)})
-                    else:
-                        sincronizados.append(dados)
-                        novo_estado[sku] = {"estoque": produto["estoque"], "preco": produto["preco"]}
-                except Exception as e:
-                    logging.exception(f"Erro ao processar SKU {sku}")
-                    erros.append({**dados, "mensagem": str(e)})
+            try:
+                falhas = _gravar(sku, produto["estoque"], produto["preco"], ref)
+                if falhas:
+                    erros.append({**dados, "mensagem": " | ".join(falhas)})
+                else:
+                    sincronizados.append(dados)
+                    novo_estado[sku] = {"estoque": produto["estoque"], "preco": produto["preco"]}
+                    motivos = _motivos_do_item(ref, produto["estoque"], produto["preco"])
+                    if motivos:
+                        alertas.append(_alerta(sku, nome, ref, produto, motivos))
+            except Exception as e:
+                logging.exception(f"Erro ao processar SKU {sku}")
+                erros.append({**dados, "mensagem": str(e)})
 
         if on_progress:
             on_progress(indice, total)
@@ -150,53 +141,15 @@ def executar_sincronizacao(on_progress=None):
             logging.exception("Falha ao enviar e-mail do relatório de sincronização")
 
     logging.info(
-        f"Sincronização finalizada: {len(sincronizados)} atualizados, {len(erros)} erros, {len(alertas)} aguardando aprovação"
+        f"Sincronização finalizada: {len(sincronizados)} atualizados, {len(erros)} erros, {len(alertas)} alertas"
     )
     return {"sincronizados": sincronizados, "erros": erros, "alertas": alertas}
 
 
-def sincronizar_alerta(item):
-    """Grava um item que estava aguardando aprovação e o tira da lista de alertas."""
-    sku = item["sku"]
-    resp_estoque = magazord_api.atualizar_estoque(
-        sku, item["estoque_novo"], criar_registro=item.get("estoque_antigo") is None
-    )
-    resp_preco = magazord_api.atualizar_preco(sku, item["preco_novo"])
-    falhas = _falhas_http(resp_estoque, resp_preco)
-    if falhas:
-        return False, " | ".join(falhas)
-
-    estado = state_manager.carregar_estado()
-    estado[sku] = {"estoque": item["estoque_novo"], "preco": item["preco_novo"]}
-    state_manager.salvar_estado(estado)
-
-    status = status_manager.carregar_status()
-    produtos = status.get("produtos", []) + [{
-        "sku": sku,
-        "nome": item["nome_banco"],
-        "estoque_antigo": item["estoque_antigo"],
-        "estoque_novo": item["estoque_novo"],
-        "preco_antigo": item["preco_antigo"],
-        "preco_novo": item["preco_novo"],
-    }]
-    restantes = [a for a in status.get("alertas", []) if a["sku"] != sku]
-    status_manager.salvar_status(
-        sucesso=not status.get("erros"),
-        produtos_sincronizados=produtos,
-        erros=status.get("erros", []),
-        alertas=restantes,
-    )
-    logging.info(f"SKU {sku} aprovado e sincronizado manualmente")
-    return True, "sincronizado"
-
-
 def tentar_novamente(item):
-    """Tenta de novo um item que tinha ficado em erro (SKU não encontrada ou nome
-    divergente). Reconsulta a Magazord: se continuar bloqueado, devolve o novo
-    motivo; se a variação for grande, vira alerta; senão grava normalmente.
-
-    Retorna (resultado, mensagem), onde resultado é "sincronizado", "alerta" ou "erro".
-    """
+    """Tenta de novo um item que tinha ficado em erro (SKU não encontrada ou
+    falha ao gravar). Reconsulta a Magazord e grava de novo; se a variação
+    for grande, entra também em alertas (gravado, mas revisável)."""
     sku = item["sku"]
     nome = item["nome"]
     catalogo = magazord_api.listar_produtos_magazord()
@@ -204,29 +157,14 @@ def tentar_novamente(item):
 
     if not ref:
         return "erro", "SKU não encontrada na Magazord"
-    if not nomes_conferem(nome, ref["nome"]):
-        return "erro", _mensagem_nome_divergente(sku, nome, ref["nome"], catalogo)
 
     status = status_manager.carregar_status()
     restantes_erros = [e for e in status.get("erros", []) if e["sku"] != sku]
 
-    motivos = _motivos_do_item(ref, item["estoque_novo"], item["preco_novo"])
-    if motivos:
-        produto = {"estoque": item["estoque_novo"], "preco": item["preco_novo"]}
-        alertas = status.get("alertas", []) + [_pendente(sku, nome, ref, produto, motivos)]
-        status_manager.salvar_status(
-            sucesso=not restantes_erros,
-            produtos_sincronizados=status.get("produtos", []),
-            erros=restantes_erros,
-            alertas=alertas,
-        )
-        return "alerta", f"nome confere agora, mas com variação grande ({', '.join(motivos)}). Foi para a aba Alertas"
-
-    resp_estoque = magazord_api.atualizar_estoque(
-        sku, item["estoque_novo"], criar_registro=ref.get("estoque") is None
-    )
-    resp_preco = magazord_api.atualizar_preco(sku, item["preco_novo"])
-    falhas = _falhas_http(resp_estoque, resp_preco)
+    try:
+        falhas = _gravar(sku, item["estoque_novo"], item["preco_novo"], ref)
+    except Exception as e:
+        return "erro", str(e)
     if falhas:
         return "erro", " | ".join(falhas)
 
@@ -242,11 +180,61 @@ def tentar_novamente(item):
         "preco_antigo": ref.get("preco"),
         "preco_novo": item["preco_novo"],
     }]
+
+    motivos = _motivos_do_item(ref, item["estoque_novo"], item["preco_novo"])
+    alertas = status.get("alertas", [])
+    if motivos:
+        produto = {"estoque": item["estoque_novo"], "preco": item["preco_novo"]}
+        alertas = alertas + [_alerta(sku, nome, ref, produto, motivos)]
+
     status_manager.salvar_status(
         sucesso=not restantes_erros,
         produtos_sincronizados=produtos,
         erros=restantes_erros,
-        alertas=status.get("alertas", []),
+        alertas=alertas,
     )
-    logging.info(f"SKU {sku} corrigido e sincronizado manualmente")
+    logging.info(f"SKU {sku} sincronizado manualmente (tentar de novo)")
+    if motivos:
+        return "alerta", f"sincronizado, mas com variação grande ({', '.join(motivos)})"
     return "sincronizado", "atualizado com sucesso"
+
+
+def reverter_alerta(item):
+    """Reverte um alerta já sincronizado, voltando aos valores que a Magazord
+    tinha antes dessa sincronização, e tira o item da lista de alertas."""
+    sku = item["sku"]
+    estoque_alvo = item.get("estoque_antigo")
+    preco_alvo = item.get("preco_antigo")
+    if estoque_alvo is None and preco_alvo is None:
+        return False, "não há valores anteriores registrados pra reverter"
+
+    falhas = []
+    if estoque_alvo is not None:
+        resp = magazord_api.atualizar_estoque(sku, estoque_alvo)
+        if resp.status_code >= 400:
+            falhas.append(f"estoque {resp.status_code}: {' '.join(resp.text.split())[:200]}")
+    if preco_alvo is not None:
+        resp = magazord_api.atualizar_preco(sku, preco_alvo)
+        if resp.status_code >= 400:
+            falhas.append(f"preço {resp.status_code}: {' '.join(resp.text.split())[:200]}")
+    if falhas:
+        return False, " | ".join(falhas)
+
+    estado = state_manager.carregar_estado()
+    item_estado = estado.setdefault(sku, {})
+    if estoque_alvo is not None:
+        item_estado["estoque"] = estoque_alvo
+    if preco_alvo is not None:
+        item_estado["preco"] = preco_alvo
+    state_manager.salvar_estado(estado)
+
+    status = status_manager.carregar_status()
+    restantes = [a for a in status.get("alertas", []) if a["sku"] != sku]
+    status_manager.salvar_status(
+        sucesso=not status.get("erros"),
+        produtos_sincronizados=status.get("produtos", []),
+        erros=status.get("erros", []),
+        alertas=restantes,
+    )
+    logging.info(f"SKU {sku} revertido manualmente")
+    return True, "revertido"
