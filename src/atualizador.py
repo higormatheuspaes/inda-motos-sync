@@ -1,9 +1,12 @@
 import json
 import logging
 import os
+import ssl
 import subprocess
 import sys
 import urllib.request
+
+import certifi
 
 import versao as _versao_build
 
@@ -13,6 +16,16 @@ NOME_EXE = "sync_inda_motos.exe"
 NOME_EXE_NOVO = "sync_inda_motos.exe.novo"
 NOME_SCRIPT_TROCA = "_aplicar_atualizacao.bat"
 VERSAO_DEV = "local"
+
+# O Windows 7 (alvo deste app) costuma ter os certificados raiz desatualizados
+# e rejeita o HTTPS do GitHub. Usamos o pacote de certificados confiáveis que
+# vem junto com o programa (certifi), em vez de depender do Windows estar com
+# os certificados em dia.
+_CONTEXTO_SSL = ssl.create_default_context(cafile=certifi.where())
+
+
+def _abrir(url_ou_request, timeout):
+    return urllib.request.urlopen(url_ou_request, timeout=timeout, context=_CONTEXTO_SSL)
 
 
 def versao_local():
@@ -24,12 +37,12 @@ def versao_local():
 
 def _info_remota():
     req = urllib.request.Request(URL_RELEASE, headers={"User-Agent": "inda-motos-sync-updater"})
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with _abrir(req, timeout=15) as resp:
         dados = json.load(resp)
     assets = {a["name"]: a["browser_download_url"] for a in dados.get("assets", [])}
     if "versao.txt" not in assets or "sync_inda_motos_standalone.exe" not in assets:
         return None
-    with urllib.request.urlopen(assets["versao.txt"], timeout=15) as resp:
+    with _abrir(assets["versao.txt"], timeout=15) as resp:
         versao_remota = resp.read().decode("ascii").strip()
     return versao_remota, assets["sync_inda_motos_standalone.exe"]
 
@@ -66,7 +79,7 @@ def aplicar_atualizacao(versao_remota, url_exe, argumentos_relancar=()):
     novo já vem certa, embutida nele mesmo desde a compilação.
     """
     req = urllib.request.Request(url_exe, headers={"User-Agent": "inda-motos-sync-updater"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with _abrir(req, timeout=120) as resp:
         conteudo = resp.read()
     with open(NOME_EXE_NOVO, "wb") as f:
         f.write(conteudo)

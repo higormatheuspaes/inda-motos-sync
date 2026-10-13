@@ -1,3 +1,4 @@
 fdb
 requests
 python-dotenv
+certifi

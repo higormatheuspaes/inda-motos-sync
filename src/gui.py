@@ -30,13 +30,17 @@ class App(tk.Tk):
         self.resizable(True, True)
         self.configure(bg=COR_FUNDO)
 
-        try:
-            self.iconbitmap("assets/icone.ico")
-        except Exception:
-            logging.exception("Falha ao carregar o ícone da janela")
-
         # precisa vir antes de _montar_layout, que já usa self.logo_img
         self.logo_img = tk.PhotoImage(file="assets/logo_indamotos.png").zoom(2, 2).subsample(3, 3)
+
+        try:
+            # iconphoto com PNG funciona em versões mais antigas do Tcl/Tk;
+            # iconbitmap com .ico (sobretudo com o tamanho 256px, que usa
+            # compressão PNG dentro do .ico) falha em algumas delas.
+            self.icone_janela_img = tk.PhotoImage(file="assets/icone.png")
+            self.iconphoto(True, self.icone_janela_img)
+        except Exception:
+            logging.exception("Falha ao carregar o ícone da janela")
 
         self._configurar_estilos()
         self._montar_layout()
@@ -524,6 +528,7 @@ class App(tk.Tk):
             logging.exception("Falha ao checar atualização")
             return
         if info:
+            logging.info(f"Atualização encontrada ({info[0]})")
             self.after(0, lambda: self._perguntar_atualizacao(*info))
 
     def _perguntar_atualizacao(self, versao, url):
