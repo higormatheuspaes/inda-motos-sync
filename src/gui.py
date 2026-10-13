@@ -26,6 +26,11 @@ class App(tk.Tk):
         self.resizable(True, True)
         self.configure(bg=COR_FUNDO)
 
+        try:
+            self.iconbitmap("assets/icone.ico")
+        except Exception:
+            logging.exception("Falha ao carregar o ícone da janela")
+
         # precisa vir antes de _montar_layout, que já usa self.logo_img
         self.logo_img = tk.PhotoImage(file="assets/logo_indamotos.png").zoom(2, 2).subsample(3, 3)
 
