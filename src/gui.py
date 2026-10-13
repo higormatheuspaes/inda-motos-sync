@@ -1,7 +1,9 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
+import sys
 import threading
 import logging
+import atualizador
 import status_manager
 import sync_engine
 
@@ -30,6 +32,7 @@ class App(tk.Tk):
         self._configurar_estilos()
         self._montar_layout()
         self.carregar_tela()
+        self.after(1000, self._checar_atualizacao_em_segundo_plano)
 
     # ------------------------------------------------------------------
     def _configurar_estilos(self):
@@ -193,8 +196,12 @@ class App(tk.Tk):
             font=("Segoe UI", 16, "bold"), bg=COR_FUNDO, fg=COR_TEXTO,
         ).pack(anchor="w")
 
+        versao = atualizador.versao_local()
+        subtitulo = "Estoque e preço — Firebird → Magazord"
+        if versao:
+            subtitulo += f"  •  versão {versao[:7]}"
         tk.Label(
-            header, text="Estoque e preço — Firebird → Magazord",
+            header, text=subtitulo,
             font=("Segoe UI", 10), bg=COR_FUNDO, fg=COR_TEXTO_SECUNDARIO,
         ).pack(anchor="w")
 
@@ -496,3 +503,55 @@ class App(tk.Tk):
         self.progresso.stop()
         self.progresso.pack_forget()
         self.carregar_tela()
+
+    # ------------------------------------------------------------------
+    def _checar_atualizacao_em_segundo_plano(self):
+        threading.Thread(target=self._checar_atualizacao_thread, daemon=True).start()
+
+    def _checar_atualizacao_thread(self):
+        try:
+            info = atualizador.verificar_atualizacao()
+        except Exception:
+            logging.exception("Falha ao checar atualização")
+            return
+        if info:
+            self.after(0, lambda: self._perguntar_atualizacao(*info))
+
+    def _perguntar_atualizacao(self, versao, url):
+        confirmado = messagebox.askyesno(
+            "Atualização disponível",
+            "Tem uma versão nova do sistema disponível.\n\n"
+            "Atualizar agora? O programa vai fechar e abrir de novo sozinho.",
+            parent=self,
+        )
+        if not confirmado:
+            return
+        aviso = tk.Toplevel(self)
+        aviso.title("Atualizando")
+        aviso.configure(bg=COR_CARD)
+        aviso.resizable(False, False)
+        tk.Label(
+            aviso, text="Baixando atualização, aguarde...",
+            font=("Segoe UI", 10), bg=COR_CARD, fg=COR_TEXTO, padx=32, pady=32,
+        ).pack()
+        aviso.transient(self)
+        aviso.grab_set()
+        threading.Thread(target=self._aplicar_atualizacao_thread, args=(versao, url, aviso), daemon=True).start()
+
+    def _aplicar_atualizacao_thread(self, versao, url, aviso):
+        try:
+            atualizador.aplicar_atualizacao(versao, url)
+        except Exception as e:
+            logging.exception("Falha ao aplicar atualização")
+            self.after(0, lambda: self._falhou_atualizacao(aviso, str(e)))
+            return
+        self.after(0, lambda: self._atualizacao_concluida(aviso))
+
+    def _falhou_atualizacao(self, aviso, mensagem):
+        aviso.destroy()
+        messagebox.showerror("Falha ao atualizar", mensagem, parent=self)
+
+    def _atualizacao_concluida(self, aviso):
+        aviso.destroy()
+        self.destroy()
+        sys.exit(0)

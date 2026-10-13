@@ -30,10 +30,14 @@ jobs:
       - name: Montar pacote de distribuição
         shell: pwsh
         run: |
+          "${{ github.sha }}" | Out-File -FilePath versao.txt -Encoding ascii -NoNewline
+          Copy-Item dist/sync_inda_motos.exe sync_inda_motos_standalone.exe
+
           New-Item -ItemType Directory -Force -Path pacote
           Copy-Item dist/sync_inda_motos.exe pacote/
           Copy-Item -Recurse assets pacote/assets
           Copy-Item .env.example pacote/.env.example
+          Copy-Item versao.txt pacote/versao.txt
           Compress-Archive -Path pacote/* -DestinationPath sync_inda_motos.zip
 
       - name: Publicar release
@@ -45,4 +49,7 @@ jobs:
             Build automático gerado a partir do commit ${{ github.sha }}.
 
             ${{ github.event.head_commit.message }}
-          files: sync_inda_motos.zip
+          files: |
+            sync_inda_motos.zip
+            sync_inda_motos_standalone.exe
+            versao.txt
